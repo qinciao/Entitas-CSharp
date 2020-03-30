@@ -19,7 +19,16 @@ namespace Entitas.VisualDebugging.Unity.Editor
             NameDescending,
 
             ExecutionTime,
-            ExecutionTimeDescending
+            ExecutionTimeDescending,
+
+            UpdateTime,
+            UpdateTimeDescending,
+
+            LateUpdateTime,
+            LateUpdateTimeDescending,
+
+            FixedUpdateTime,
+            FixedUpdateTimeDescending
         }
 
         Graph _systemsMonitor;
@@ -32,6 +41,9 @@ namespace Entitas.VisualDebugging.Unity.Editor
 
         static bool _showInitializeSystems = true;
         static bool _showExecuteSystems = true;
+        static bool _showUpdateSystems = true;
+        static bool _showLateUpdateSystems = true;
+        static bool _showFixedUpdateSystems = true;
         static bool _showCleanupSystems = true;
         static bool _showTearDownSystems = true;
         static bool _hideEmptySystems = true;
@@ -83,6 +95,9 @@ namespace Entitas.VisualDebugging.Unity.Editor
                     EditorGUILayout.LabelField(systems.name, EditorStyles.boldLabel);
                     EditorGUILayout.LabelField("Initialize Systems", systems.totalInitializeSystemsCount.ToString());
                     EditorGUILayout.LabelField("Execute Systems", systems.totalExecuteSystemsCount.ToString());
+                    EditorGUILayout.LabelField("Update Systems", systems.totalUpdateSystemsCount.ToString());
+                    EditorGUILayout.LabelField("LateUpdate Systems", systems.totalLateUpdateSystemsCount.ToString());
+                    EditorGUILayout.LabelField("FixedUpdate Systems", systems.totalFixedUpdateSystemsCount.ToString());
                     EditorGUILayout.LabelField("Cleanup Systems", systems.totalCleanupSystemsCount.ToString());
                     EditorGUILayout.LabelField("TearDown Systems", systems.totalTearDownSystemsCount.ToString());
                     EditorGUILayout.LabelField("Total Systems", systems.totalSystemsCount.ToString());
@@ -109,6 +124,9 @@ namespace Entitas.VisualDebugging.Unity.Editor
                         EditorGUILayout.BeginVertical();
                         {
                             EditorGUILayout.LabelField("Execution duration", systems.executeDuration.ToString());
+                            EditorGUILayout.LabelField("Update duration", systems.updateDuration.ToString());
+                            EditorGUILayout.LabelField("LateUpdate duration", systems.lateUpdateDuration.ToString());
+                            EditorGUILayout.LabelField("FixedUpdate duration", systems.fixedUpdateDuration.ToString());
                             EditorGUILayout.LabelField("Cleanup duration", systems.cleanupDuration.ToString());
                         }
                         EditorGUILayout.EndVertical();
@@ -128,15 +146,26 @@ namespace Entitas.VisualDebugging.Unity.Editor
                         {
                             systems.paused = true;
                             systems.StepExecute();
+                            systems.StepUpdate();
+                            systems.StepLateUpdate();
+                            systems.StepFixedUpdate();
                             systems.StepCleanup();
-                            addDuration((float)systems.executeDuration + (float)systems.cleanupDuration);
+                            addDuration((float)systems.executeDuration
+                                + (float)systems.updateDuration
+                                + (float)systems.lateUpdateDuration
+                                + (float)systems.fixedUpdateDuration
+                                + (float)systems.cleanupDuration);
                         }
                     }
                     EditorGUILayout.EndHorizontal();
 
                     if (!EditorApplication.isPaused && !systems.paused)
                     {
-                        addDuration((float)systems.executeDuration + (float)systems.cleanupDuration);
+                        addDuration((float)systems.executeDuration
+                                + (float)systems.updateDuration
+                                + (float)systems.lateUpdateDuration
+                                + (float)systems.fixedUpdateDuration
+                                + (float)systems.cleanupDuration);
                     }
                     _systemsMonitor.Draw(_systemMonitorData.ToArray(), 80f);
                 }
@@ -203,6 +232,48 @@ namespace Entitas.VisualDebugging.Unity.Editor
                         EditorLayout.EndSectionContent();
                     }
 
+                    _showUpdateSystems = EditorLayout.DrawSectionHeaderToggle("Update Systems", _showUpdateSystems);
+                    if (_showUpdateSystems && shouldShowSystems(systems, SystemInterfaceFlags.IUpdateSystem))
+                    {
+                        EditorLayout.BeginSectionContent();
+                        {
+                            var systemsDrawn = drawSystemInfos(systems, SystemInterfaceFlags.IUpdateSystem);
+                            if (systemsDrawn == 0)
+                            {
+                                EditorGUILayout.LabelField(string.Empty);
+                            }
+                        }
+                        EditorLayout.EndSectionContent();
+                    }
+
+                    _showLateUpdateSystems = EditorLayout.DrawSectionHeaderToggle("LateUpdate Systems", _showLateUpdateSystems);
+                    if (_showLateUpdateSystems && shouldShowSystems(systems, SystemInterfaceFlags.ILateUpdateSystem))
+                    {
+                        EditorLayout.BeginSectionContent();
+                        {
+                            var systemsDrawn = drawSystemInfos(systems, SystemInterfaceFlags.ILateUpdateSystem);
+                            if (systemsDrawn == 0)
+                            {
+                                EditorGUILayout.LabelField(string.Empty);
+                            }
+                        }
+                        EditorLayout.EndSectionContent();
+                    }
+
+                    _showFixedUpdateSystems = EditorLayout.DrawSectionHeaderToggle("FixedUpdate Systems", _showFixedUpdateSystems);
+                    if (_showFixedUpdateSystems && shouldShowSystems(systems, SystemInterfaceFlags.IFixedUpdateSystem))
+                    {
+                        EditorLayout.BeginSectionContent();
+                        {
+                            var systemsDrawn = drawSystemInfos(systems, SystemInterfaceFlags.IFixedUpdateSystem);
+                            if (systemsDrawn == 0)
+                            {
+                                EditorGUILayout.LabelField(string.Empty);
+                            }
+                        }
+                        EditorLayout.EndSectionContent();
+                    }
+
                     _showCleanupSystems = EditorLayout.DrawSectionHeaderToggle("Cleanup Systems", _showCleanupSystems);
                     if (_showCleanupSystems && shouldShowSystems(systems, SystemInterfaceFlags.ICleanupSystem))
                     {
@@ -249,6 +320,21 @@ namespace Entitas.VisualDebugging.Unity.Editor
                 case SystemInterfaceFlags.IExecuteSystem:
                     systemInfos = systems.executeSystemInfos
                         .Where(systemInfo => systemInfo.averageExecutionDuration >= _threshold)
+                        .ToArray();
+                    break;
+                case SystemInterfaceFlags.IUpdateSystem:
+                    systemInfos = systems.updateSystemInfos
+                        .Where(systemInfo => systemInfo.averageUpdateDuration >= _threshold)
+                        .ToArray();
+                    break;
+                case SystemInterfaceFlags.ILateUpdateSystem:
+                    systemInfos = systems.lateUpdateSystemInfos
+                        .Where(systemInfo => systemInfo.averageLateUpdateDuration >= _threshold)
+                        .ToArray();
+                    break;
+                case SystemInterfaceFlags.IFixedUpdateSystem:
+                    systemInfos = systems.fixedUpdateSystemInfos
+                        .Where(systemInfo => systemInfo.averageFixedUpdateDuration >= _threshold)
                         .ToArray();
                     break;
                 case SystemInterfaceFlags.ICleanupSystem:
@@ -327,6 +413,24 @@ namespace Entitas.VisualDebugging.Unity.Editor
                                 var maxE = string.Format("▲ {0:00.000}", systemInfo.maxExecutionDuration);
                                 EditorGUILayout.LabelField(systemInfo.systemName, avgE + minE + maxE, getSystemStyle(systemInfo, SystemInterfaceFlags.IExecuteSystem));
                                 break;
+                            case SystemInterfaceFlags.IUpdateSystem:
+                                var avgU = string.Format("Ø {0:00.000}", systemInfo.averageUpdateDuration).PadRight(12);
+                                var minU = string.Format("▼ {0:00.000}", systemInfo.minUpdateDuration).PadRight(12);
+                                var maxU = string.Format("▲ {0:00.000}", systemInfo.maxUpdateDuration);
+                                EditorGUILayout.LabelField(systemInfo.systemName, avgU + minU + maxU, getSystemStyle(systemInfo, SystemInterfaceFlags.IUpdateSystem));
+                                break;
+                            case SystemInterfaceFlags.ILateUpdateSystem:
+                                var avgL = string.Format("Ø {0:00.000}", systemInfo.averageLateUpdateDuration).PadRight(12);
+                                var minL = string.Format("▼ {0:00.000}", systemInfo.minLateUpdateDuration).PadRight(12);
+                                var maxL = string.Format("▲ {0:00.000}", systemInfo.maxLateUpdateDuration);
+                                EditorGUILayout.LabelField(systemInfo.systemName, avgL + minL + maxL, getSystemStyle(systemInfo, SystemInterfaceFlags.ILateUpdateSystem));
+                                break;
+                            case SystemInterfaceFlags.IFixedUpdateSystem:
+                                var avgF = string.Format("Ø {0:00.000}", systemInfo.averageFixedUpdateDuration).PadRight(12);
+                                var minF = string.Format("▼ {0:00.000}", systemInfo.minFixedUpdateDuration).PadRight(12);
+                                var maxF = string.Format("▲ {0:00.000}", systemInfo.maxFixedUpdateDuration);
+                                EditorGUILayout.LabelField(systemInfo.systemName, avgF + minF + maxF, getSystemStyle(systemInfo, SystemInterfaceFlags.IFixedUpdateSystem));
+                                break;
                             case SystemInterfaceFlags.ICleanupSystem:
                                 var avgC = string.Format("Ø {0:00.000}", systemInfo.averageCleanupDuration).PadRight(12);
                                 var minC = string.Format("▼ {0:00.000}", systemInfo.minCleanupDuration).PadRight(12);
@@ -384,6 +488,45 @@ namespace Entitas.VisualDebugging.Unity.Editor
                     .ToArray();
             }
 
+            if (sortMethod == SortMethod.UpdateTime)
+            {
+                return systemInfos
+                    .OrderBy(systemInfo => systemInfo.averageUpdateDuration)
+                    .ToArray();
+            }
+            if (sortMethod == SortMethod.UpdateTimeDescending)
+            {
+                return systemInfos
+                    .OrderByDescending(systemInfo => systemInfo.averageUpdateDuration)
+                    .ToArray();
+            }
+
+            if (sortMethod == SortMethod.LateUpdateTime)
+            {
+                return systemInfos
+                    .OrderBy(systemInfo => systemInfo.averageLateUpdateDuration)
+                    .ToArray();
+            }
+            if (sortMethod == SortMethod.LateUpdateTimeDescending)
+            {
+                return systemInfos
+                    .OrderByDescending(systemInfo => systemInfo.averageLateUpdateDuration)
+                    .ToArray();
+            }
+
+            if (sortMethod == SortMethod.FixedUpdateTime)
+            {
+                return systemInfos
+                    .OrderBy(systemInfo => systemInfo.averageFixedUpdateDuration)
+                    .ToArray();
+            }
+            if (sortMethod == SortMethod.FixedUpdateTimeDescending)
+            {
+                return systemInfos
+                    .OrderByDescending(systemInfo => systemInfo.averageFixedUpdateDuration)
+                    .ToArray();
+            }
+
             return systemInfos;
         }
 
@@ -404,6 +547,12 @@ namespace Entitas.VisualDebugging.Unity.Editor
                     return systems.totalCleanupSystemsCount > 0;
                 case SystemInterfaceFlags.ITearDownSystem:
                     return systems.totalTearDownSystemsCount > 0;
+                case SystemInterfaceFlags.IUpdateSystem:
+                    return systems.totalUpdateSystemsCount > 0;
+                case SystemInterfaceFlags.ILateUpdateSystem:
+                    return systems.totalLateUpdateSystemsCount > 0;
+                case SystemInterfaceFlags.IFixedUpdateSystem:
+                    return systems.totalFixedUpdateSystemsCount > 0;
                 default:
                     return true;
             }
@@ -417,6 +566,21 @@ namespace Entitas.VisualDebugging.Unity.Editor
                 : style.normal.textColor;
 
             if (systemFlag == SystemInterfaceFlags.IExecuteSystem && systemInfo.averageExecutionDuration >= _systemWarningThreshold)
+            {
+                color = Color.red;
+            }
+
+            if (systemFlag == SystemInterfaceFlags.IUpdateSystem && systemInfo.averageUpdateDuration >= _systemWarningThreshold)
+            {
+                color = Color.red;
+            }
+
+            if (systemFlag == SystemInterfaceFlags.ILateUpdateSystem && systemInfo.averageLateUpdateDuration >= _systemWarningThreshold)
+            {
+                color = Color.red;
+            }
+
+            if (systemFlag == SystemInterfaceFlags.IFixedUpdateSystem && systemInfo.averageFixedUpdateDuration >= _systemWarningThreshold)
             {
                 color = Color.red;
             }
